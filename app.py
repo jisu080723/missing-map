@@ -8,7 +8,7 @@ import requests
 import json
 
 st.set_page_config(page_title="실종자 관제", layout="wide")
-st.title("开设 실종자 보호자 직접 등록 및 실시간 관제 플랫폼")
+st.title("실종자 보호자 직접 등록 및 실시간 관제 플랫폼")
 
 geolocator = Nominatim(user_agent="missing_jisu_2026")
 
