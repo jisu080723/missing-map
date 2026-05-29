@@ -7,7 +7,7 @@ from geopy.geocoders import Nominatim
 
 # 1. 페이지 기본 설정
 st.set_page_config(page_title="실종자 영구 등록 및 관제 시스템", layout="wide")
-st.title("🚓 실종자 보호자 직접 등록 및 실시간 관제 플랫폼")
+st.title("存放 실종자 보호자 직접 등록 및 실시간 관제 플랫폼")
 st.caption("보호자가 입력한 정보는 구글 시트(DB)에 영구 저장되며, 새로고침해도 사라지지 않습니다.")
 
 # 주소 변환기 로딩
@@ -74,4 +74,17 @@ if submit_button:
                     st.success(f"🎯 {name} 님의 정보가 성공적으로 등록되었습니다! (새로고침 시 구글 시트 상태가 반영됩니다)")
                     st.rerun()
                 else:
-                    st.error(f"❌ '{location_name}' 위치를 찾을 수 없습니다. 정확한 명칭으로
+                    st.error(f"❌ '{location_name}' 위치를 찾을 수 없습니다. 정확한 명칭으로 입력해 주세요.")
+            except Exception as e:
+                st.error("시스템 처리 중 오류가 발생했습니다.")
+    else:
+        st.error("❌ 이름과 마지막 발견 위치는 필수 입력 사항입니다.")
+
+# 화면에 보여줄 최종 데이터 선택
+display_db = st.session_state.temp_db if "temp_db" in st.session_state else missing_db
+
+# 6. 메인 화면 구성
+col1, col2 = st.columns([1, 1])
+
+with col1:
+    st.subheader("📋 현재 등록된 실종자 누적
