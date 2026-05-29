@@ -99,4 +99,45 @@ if submit_button:
 column_left, column_right = st.columns([1, 1])
 
 with column_left:
-    st.subheader("📋 현재
+    st.subheader("📋 현재 등록된 실종자 누적 리스트")
+    if not missing_database.empty:
+        st.dataframe(missing_database, use_container_width=True)
+    else:
+        st.info("현재 저장된 실종자 데이터가 없습니다.")
+
+with column_right:
+    st.subheader("📍 실시간 수색 관제 지도 (반경 500m 원)")
+    
+    if missing_database.empty or "Y_COORDINATE" not in missing_database.columns:
+        map_object = folium.Map(location=[36.5, 127.5], zoom_start=7)
+    else:
+        latest_latitude = float(missing_database.iloc[-1]["Y_COORDINATE"])
+        latest_longitude = float(missing_database.iloc[-1]["X_COORDINATE"])
+        map_object = folium.Map(location=[latest_latitude, latest_longitude], zoom_start=14)
+        
+        for index, row in missing_database.iterrows():
+            try:
+                person_name = row["이름"] if "이름" in row else "실종자"
+                person_location = row["위치"] if "위치" in row else ""
+                
+                folium.Marker(
+                    [float(row["Y_COORDINATE"]), float(row["X_COORDINATE"])],
+                    popup=f"<b>{person_name}</b><br>{person_location}",
+                    icon=folium.Icon(color="red", icon="info-sign")
+                ).add_to(map_object)
+                
+                folium.Circle(
+                    location=[float(row["Y_COORDINATE"]), float(row["X_COORDINATE"])],
+                    radius=500,
+                    color="red",
+                    fill=True,
+                    fill_opacity=0.15
+                ).add_to(map_object)
+            except Exception:
+                continue
+
+    try:
+        html_map_data = map_object._repr_html_()
+        components.html(html_map_data, height=500, scrolling=False)
+    except Exception:
+        st.error("❌ 지도를 화면에 표시하지 못했습니다.")
