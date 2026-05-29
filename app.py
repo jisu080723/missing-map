@@ -6,12 +6,14 @@ from geopy.geocoders import Nominatim
 import requests
 import json
 import streamlit.components.v1 as components
+import time
 
 st.set_page_config(page_title="실종자 관제", layout="wide")
 st.title("🚓 실종자 보호자 직접 등록 및 실시간 관제 플랫폼")
 st.caption("보호자가 입력한 정보는 구글 시트에 저장되며, 새로고침해도 사라지지 않습니다.")
 
-geolocator = Nominatim(user_agent="missing_jisu_2026")
+# 주소 변환기 세팅 및 타임아웃 넉넉하게 지정
+geolocator = Nominatim(user_agent="missing_jisu_final_2026", timeout=10)
 
 try:
     sheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
@@ -37,7 +39,6 @@ def load_data():
             df = df.iloc[:, :7]
             df.columns = cols
             
-            # 문자열로 들어온 위도 경도를 안전하게 숫자로 정제
             df["위도"] = pd.to_numeric(df["위도"], errors='coerce')
             df["경도"] = pd.to_numeric(df["경도"], errors='coerce')
             df = df.dropna(subset=["위도", "경도"])
@@ -52,39 +53,38 @@ st.sidebar.header("📝 실종자 신규 등록")
 with st.sidebar.form(key="reg_form", clear_on_submit=True):
     name = st.text_input("1. 실종자 성함")
     age = st.text_input("2. 나이")
-    loc_name = st.text_input("3. 마지막 발견 위치", placeholder="예: 서울역")
+    loc_name = st.text_input("3. 마지막 발견 위치 (정확한 주소나 명칭)", placeholder="예: 서울 종로구 세종대로 209")
     desc = st.text_area("4. 주요 특징 및 인상착의")
     submit = st.form_submit_button(label="🚨 시스템에 즉시 등록")
 
 if submit:
     if name and loc_name:
-        with st.spinner("🌍 구글 금고에 영구 저장하는 중..."):
+        with st.spinner("🌍 위치 좌표 검색 및 구글 시트 저장 중..."):
             try:
+                # 인터넷 주소 변환 서버 과부하를 막기 위해 1초 대기 후 요청
+                time.sleep(1)
                 loc = geolocator.geocode(loc_name)
+                
                 if loc:
                     new_row = {
                         "등록시간": datetime.now().strftime("%Y-%m-%d %H:%M"),
                         "이름": name, "나이": age, "위치": loc_name,
-                        "위도": float(loc.latitude), "경度": float(loc.longitude), "특징": desc
-                    }
-                    # 변수명 통일을 위한 재조정
-                    send_row = {
-                        "등록시간": new_row["등록시간"], "이름": new_row["이름"], "나이": new_row["나이"],
-                        "위치": new_row["위치"], "위도": new_row["위도"], "경도": new_row["경度"], "특징": new_row["특징"]
+                        "위도": float(loc.latitude), "경도": float(loc.longitude), "특징": desc
                     }
                     headers = {"Content-Type": "application/json"}
-                    res = requests.post(api_url, data=json.dumps(send_row), headers=headers)
+                    res = requests.post(api_url, data=json.dumps(new_row), headers=headers)
                     
                     if res.status_code == 200:
                         st.success(f"🎯 {name} 님 구글 시트에 평생 저장 완료!")
                         st.cache_data.clear()
                         st.rerun()
                     else:
-                        st.error("❌ 구글 시트 저장 실패 (API 오류)")
+                        st.error("❌ 구글 시트 웹앱 연결 실패 (2단계 설정을 확인해 주세요)")
                 else:
-                    st.error("❌ 위치를 찾을 수 없습니다.")
-            except:
-                st.error("❌ 시스템 처리 중 오류 발생")
+                    st.error("❌ 입력하신 주소를 지도에서 찾을 수 없습니다. 정확한 구/동/건물명으로 적어보세요.")
+            except Exception as e:
+                # 에러 원인을 화면에 명확하게 띄워주기
+                st.error(f"❌ 주소 검색 서버 접속 지연. 2~3초 뒤 다시 [즉시 등록] 버튼을 눌러주세요.")
     else:
         st.error("❌ 필수 항목을 채워주세요.")
 
@@ -100,11 +100,9 @@ with c1:
 with c2:
     st.subheader("📍 실시간 수색 관제 지도 (반경 500m 원)")
     
-    # 데이터가 아예 없으면 대한민국 전도 기본 표출
     if missing_db.empty:
         m = folium.Map(location=[36.5, 127.5], zoom_start=7)
     else:
-        # 가장 마지막에 등록된 진짜 위치를 중심으로 설정
         lat = float(missing_db.iloc[-1]["위도"])
         lng = float(missing_db.iloc[-1]["경도"])
         m = folium.Map(location=[lat, lng], zoom_start=14)
@@ -124,9 +122,8 @@ with c2:
             except:
                 continue
             
-    # HTML 강제 출력 방식으로 지도 표출
     try:
         map_html = m._repr_html_()
         components.html(map_html, height=500, scrolling=False)
     except:
-        st.error("지도를 그리는 중 오류가 발생했습니다.")
+        st.error("지도를 그리는 화면에 문제가 발생했습니다.")
