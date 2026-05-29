@@ -89,4 +89,4 @@ with c1:
     if missing_db.empty:
         st.info("현재 저장된 데이터가 없습니다.")
     else:
-        st.dataframe(missing_db
+        st.dataframe(missing_db)
