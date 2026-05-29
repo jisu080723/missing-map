@@ -83,4 +83,26 @@ if submit_button:
             except Exception:
                 st.error("❌ 서버 지연이 발생했습니다. 잠시 후 다시 눌러주세요.")
     else:
-        st.error("❌ 성함과 위치는 필수 입력
+        st.error("❌ 성함과 위치는 필수 입력 항목입니다.")
+
+# 6. 메인 화면 레이아웃 분할
+column_left, column_right = st.columns([1, 1])
+
+with column_left:
+    st.subheader("📋 현재 등록된 실종자 누적 리스트")
+    if not missing_database.empty:
+        display_df = missing_database.copy()
+        display_cols = [c for c in display_df.columns if c not in ["latitude", "longitude"]]
+        st.dataframe(display_df[display_cols], use_container_width=True)
+    else:
+        st.info("현재 저장된 실종자 데이터가 없습니다.")
+
+with column_right:
+    st.subheader("📍 실시간 수색 관제 지도")
+    if missing_database.empty:
+        # 데이터가 없으면 대한민국 전도 표출
+        default_map = pd.DataFrame({"latitude": [36.5], "longitude": [127.5]})
+        st.map(default_map, zoom=6, use_container_width=True)
+    else:
+        # 데이터가 있으면 순정 지도가 딜레이 없이 100% 강제 렌더링합니다.
+        st.map(missing_database, zoom=13, use_container_width=True)
