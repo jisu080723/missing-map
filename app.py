@@ -1,11 +1,11 @@
 import streamlit as st
 import folium
-from streamlit_folium import st_folium
 import pandas as pd
 from datetime import datetime
 from geopy.geocoders import Nominatim
 import requests
 import json
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="실종자 관제", layout="wide")
 st.title("🚓 실종자 보호자 직접 등록 및 실시간 관제 플랫폼")
@@ -31,13 +31,16 @@ def load_data():
         if len(df) > 1:
             if "위도" in str(df.iloc[0]) or "이름" in str(df.iloc[0]) or "lat" in str(df.iloc[0]).lower():
                 df = df.iloc[1:]
-            
-            # 구글 시트의 칸 개수가 모자라거나 넘치면 강제로 7개로 맞춤
             if df.shape[1] < 7:
                 for i in range(7 - df.shape[1]):
                     df[df.shape[1]] = ""
             df = df.iloc[:, :7]
             df.columns = cols
+            
+            # 문자열로 들어온 위도 경도를 안전하게 숫자로 정제
+            df["위도"] = pd.to_numeric(df["위도"], errors='coerce')
+            df["경도"] = pd.to_numeric(df["경도"], errors='coerce')
+            df = df.dropna(subset=["위도", "경도"])
             return df
         return pd.DataFrame(columns=cols)
     except:
@@ -62,10 +65,15 @@ if submit:
                     new_row = {
                         "등록시간": datetime.now().strftime("%Y-%m-%d %H:%M"),
                         "이름": name, "나이": age, "위치": loc_name,
-                        "위도": float(loc.latitude), "경도": float(loc.longitude), "특징": desc
+                        "위도": float(loc.latitude), "경度": float(loc.longitude), "특징": desc
+                    }
+                    # 변수명 통일을 위한 재조정
+                    send_row = {
+                        "등록시간": new_row["등록시간"], "이름": new_row["이름"], "나이": new_row["나이"],
+                        "위치": new_row["위치"], "위도": new_row["위도"], "경도": new_row["경度"], "특징": new_row["특징"]
                     }
                     headers = {"Content-Type": "application/json"}
-                    res = requests.post(api_url, data=json.dumps(new_row), headers=headers)
+                    res = requests.post(api_url, data=json.dumps(send_row), headers=headers)
                     
                     if res.status_code == 200:
                         st.success(f"🎯 {name} 님 구글 시트에 평생 저장 완료!")
@@ -92,41 +100,33 @@ with c1:
 with c2:
     st.subheader("📍 실시간 수색 관제 지도 (반경 500m 원)")
     
-    # 💡 [지도 완전 방어벽] 깨끗한 위도/경도 숫자 데이터만 필터링
-    try:
-        map_df = missing_db.copy()
-        map_df["위도"] = pd.to_numeric(map_df["위도"], errors='coerce')
-        map_df["경도"] = pd.to_numeric(map_df["경도"], errors='coerce')
-        map_df = map_df.dropna(subset=["위도", "경도"])
-    except:
-        map_df = pd.DataFrame()
-
-    # 데이터가 없거나 깨진 데이터뿐이면 대한민국 기본 지도 출력
-    if map_df.empty:
+    # 데이터가 아예 없으면 대한민국 전도 기본 표출
+    if missing_db.empty:
         m = folium.Map(location=[36.5, 127.5], zoom_start=7)
     else:
-        try:
-            # 가장 마지막에 등록된 '정상 좌표' 위치를 중심으로 설정
-            lat = float(map_df.iloc[-1]["위도"])
-            lng = float(map_df.iloc[-1]["경도"])
-            m = folium.Map(location=[lat, lng], zoom_start=14)
+        # 가장 마지막에 등록된 진짜 위치를 중심으로 설정
+        lat = float(missing_db.iloc[-1]["위도"])
+        lng = float(missing_db.iloc[-1]["경도"])
+        m = folium.Map(location=[lat, lng], zoom_start=14)
+        
+        for idx, row in missing_db.iterrows():
+            try:
+                folium.Marker(
+                    [float(row["위도"]), float(row["경도"])],
+                    popup=f"<b>{row['이름']}</b>({row['나이']}세)<br>{row['위치']}",
+                    icon=folium.Icon(color="red", icon="info-sign")
+                ).add_to(m)
+                
+                folium.Circle(
+                    location=[float(row["위도"]), float(row["경도"])],
+                    radius=500, color="red", fill=True, fill_opacity=0.15
+                ).add_to(m)
+            except:
+                continue
             
-            # 오류 없는 정상 좌표만 지도에 마커와 원 그리기
-            for idx, row in map_df.iterrows():
-                try:
-                    folium.Marker(
-                        [float(row["위도"]), float(row["경도"])],
-                        popup=f"<b>{row['이름']}</b>({row['나이']}세)<br>{row['위치']}",
-                        icon=folium.Icon(color="red", icon="info-sign")
-                    ).add_to(m)
-                    
-                    folium.Circle(
-                        location=[float(row["위度"] if "위度" in row else row["위도"]), float(row["경도"])],
-                        radius=500, color="red", fill=True, fill_opacity=0.15
-                    ).add_to(m)
-                except:
-                    continue
-        except:
-            m = folium.Map(location=[36.5, 127.5], zoom_start=7)
-            
-    st_folium(m, width="100%", height=500)
+    # HTML 강제 출력 방식으로 지도 표출
+    try:
+        map_html = m._repr_html_()
+        components.html(map_html, height=500, scrolling=False)
+    except:
+        st.error("지도를 그리는 중 오류가 발생했습니다.")
