@@ -4,7 +4,7 @@ from streamlit_folium import st_folium
 import pandas as pd
 from datetime import datetime
 from geopy.geocoders import Nominatim
-from st_gsheets import GSheetsConnection
+from streamlit_gsheets import GSheetsConnection
 
 # 1. 페이지 기본 설정
 st.set_page_config(page_title="실종자 영구 등록 및 관제 시스템", layout="wide")
