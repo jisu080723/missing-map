@@ -54,28 +54,25 @@ if submit and name and loc_n:
             if l:
                 row = {"등록시간": datetime.now().strftime("%Y-%m-%d %H:%M"), "이름": name, "나이": age, "위치": loc_n, "위도": float(l.latitude), "경도": float(l.longitude), "특징": desc}
                 if requests.post(au, data=json.dumps(row), headers={"Content-Type": "application/json"}).status_code == 200:
-                    st.success("🎯 등록 성공!")
-                    st.cache_data.clear()
-                    st.rerun()
-                else:
-                    st.error("❌ 구글 저장 실패")
-            else:
-                st.error("❌ 위치 주소 오류")
-        except:
-            st.error("❌ 주소 서버 지연. 잠시 후 다시 시도")
+                    st.success("🎯 등록 성공!"); st.cache_data.clear(); st.rerun()
+                else: st.error("❌ 구글 저장 실패")
+            else: st.error("❌ 위치 주소 오류")
+        except: st.error("❌ 주소 서버 지연. 잠시 후 다시 시도")
 
 c1, c2 = st.columns([1, 1])
-
 with c1:
     st.subheader("📋 실종자 누적 리스트")
-    if not db.empty:
-        st.dataframe(db, use_container_width=True)
-    else:
-        st.info("데이터 없음")
+    st.dataframe(db, use_container_width=True) if not db.empty else st.info("데이터 없음")
 
 with c2:
     st.subheader("📍 실시간 수색 관제 지도 (반경 500m 원)")
-    if db.empty or "Y" not in db.columns:
-        m = folium.Map(location=[36.5, 127.5], zoom_start=7)
-    else:
-        m = folium.Map(
+    m = folium.Map(location=[36.5, 127.5], zoom_start=7)
+    if not db.empty and "Y" in db.columns:
+        m = folium.Map(location=[float(db.iloc[-1]["Y"]), float(db.iloc[-1]["X"])], zoom_start=14)
+        for _, r in db.iterrows():
+            try:
+                folium.Marker([float(r["Y"]), float(r["X"])], popup=f"<b>{r.get('이름','실종자')}</b>", icon=folium.Icon(color="red")).add_to(m)
+                folium.Circle(location=[float(r["Y"]), float(r["X"])], radius=500, color="red", fill=True, fill_opacity=0.15).add_to(m)
+            except: continue
+    try: cp.html(m._repr_html_(), height=500, scrolling=False)
+    except: st.error("지도 출력 에러")
