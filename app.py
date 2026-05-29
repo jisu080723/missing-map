@@ -25,20 +25,25 @@ csv_url = f"{base_url}/gviz/tq?tqx=out:csv"
 
 @st.cache_data(ttl=1)
 def load_data():
-    cols = ["등록시간", "이름", "나이", "위치", "위도", "경도", "특징"]
     try:
-        df = pd.read_csv(csv_url)
-        if not df.empty:
-            # 1. 구글 시트 칼럼 이름 앞뒤 공백 완벽 제거
-            df.columns = [str(c).strip() for c in df.columns]
-            # 2. 위도와 경도 데이터를 강제로 '숫자(Float)' 형식으로 변환 (오류 데이터는 제거)
+        # 데이터 유실 방지를 위해 헤더 없이 순수 데이터만 가져옵니다.
+        df = pd.read_csv(csv_url, header=None)
+        if len(df) > 1:
+            # 첫 번째 줄이 만약 제목줄(텍스트)이면 제외하고 데이터만 슬라이싱
+            if "위도" in str(df.iloc[0]) or "이름" in str(df.iloc[0]) or "lat" in str(df.iloc[0]).lower():
+                df = df.iloc[1:]
+            
+            # 구글 시트 열 순서에 맞춰 강제로 칼럼 매칭 (0번째=등록시간, 1번째=이름...)
+            df.columns = ["등록시간", "이름", "나이", "위치", "위도", "경도", "특징"]
+            
+            # 위도와 경도를 강제 숫자로 변환하고 에러는 버림
             df["위도"] = pd.to_numeric(df["위도"], errors='coerce')
             df["경도"] = pd.to_numeric(df["경도"], errors='coerce')
             df = df.dropna(subset=["위도", "경도"])
             return df
-        return pd.DataFrame(columns=cols)
+        return pd.DataFrame(columns=["등록시간", "이름", "나이", "위치", "위도", "경도", "특징"])
     except:
-        return pd.DataFrame(columns=cols)
+        return pd.DataFrame(columns=["등록시간", "이름", "나이", "위치", "위도", "경도", "특징"])
 
 missing_db = load_data()
 
@@ -84,31 +89,4 @@ with c1:
     if missing_db.empty:
         st.info("현재 저장된 데이터가 없습니다.")
     else:
-        st.dataframe(missing_db[["등록시간", "이름", "나이", "위치", "특징"]], use_container_width=True)
-
-with c2:
-    st.subheader("📍 실시간 수색 관제 지도 (반경 500m 원)")
-    if missing_db.empty:
-        m = folium.Map(location=[36.5, 127.5], zoom_start=7)
-    else:
-        # 데이터가 있다면 가장 최신 위치를 타겟팅
-        try:
-            lat = float(missing_db.iloc[-1]["위도"])
-            lng = float(missing_db.iloc[-1]["경도"])
-            m = folium.Map(location=[lat, lng], zoom_start=14)
-            
-            for idx, row in missing_db.iterrows():
-                folium.Marker(
-                    [float(row["위도"]), float(row["경도"])],
-                    popup=f"<b>{row['이름']}</b>({row['나이']}세)<br>{row['위치']}",
-                    icon=folium.Icon(color="red", icon="info-sign")
-                ).add_to(m)
-                
-                folium.Circle(
-                    location=[float(row["위도"]), float(row["경도"])],
-                    radius=500, color="red", fill=True, fill_opacity=0.15
-                ).add_to(m)
-        except:
-            m = folium.Map(location=[36.5, 127.5], zoom_start=7)
-            
-    st_folium(m, width="100%", height=500)
+        st.dataframe(missing_db
