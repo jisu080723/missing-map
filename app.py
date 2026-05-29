@@ -8,7 +8,8 @@ import requests
 import json
 
 st.set_page_config(page_title="실종자 관제", layout="wide")
-st.title("실종자 보호자 직접 등록 및 실시간 관제 플랫폼")
+st.title("🚓 실종자 보호자 직접 등록 및 실시간 관제 플랫폼")
+st.caption("보호자가 입력한 정보는 구글 시트에 저장되며, 새로고침해도 사라지지 않습니다.")
 
 geolocator = Nominatim(user_agent="missing_jisu_2026")
 
@@ -22,13 +23,18 @@ except:
 base_url = sheet_url.split("/edit")[0] if "/edit" in sheet_url else sheet_url
 csv_url = f"{base_url}/gviz/tq?tqx=out:csv"
 
-@st.cache_data(ttl=2)
+@st.cache_data(ttl=1)
 def load_data():
     cols = ["등록시간", "이름", "나이", "위치", "위도", "경도", "특징"]
     try:
         df = pd.read_csv(csv_url)
         if not df.empty:
+            # 1. 구글 시트 칼럼 이름 앞뒤 공백 완벽 제거
             df.columns = [str(c).strip() for c in df.columns]
+            # 2. 위도와 경도 데이터를 강제로 '숫자(Float)' 형식으로 변환 (오류 데이터는 제거)
+            df["위도"] = pd.to_numeric(df["위도"], errors='coerce')
+            df["경도"] = pd.to_numeric(df["경도"], errors='coerce')
+            df = df.dropna(subset=["위도", "경도"])
             return df
         return pd.DataFrame(columns=cols)
     except:
@@ -53,9 +59,8 @@ if submit:
                     new_row = {
                         "등록시간": datetime.now().strftime("%Y-%m-%d %H:%M"),
                         "이름": name, "나이": age, "위치": loc_name,
-                        "위도": loc.latitude, "경도": loc.longitude, "특징": desc
+                        "위도": float(loc.latitude), "경도": float(loc.longitude), "특징": desc
                     }
-                    # 구글 시트에 직접 쓰기 API 요청
                     headers = {"Content-Type": "application/json"}
                     res = requests.post(api_url, data=json.dumps(new_row), headers=headers)
                     
@@ -86,15 +91,16 @@ with c2:
     if missing_db.empty:
         m = folium.Map(location=[36.5, 127.5], zoom_start=7)
     else:
-        lat = float(missing_db.iloc[-1]["위도"])
-        lng = float(missing_db.iloc[-1]["경도"])
-        m = folium.Map(location=[lat, lng], zoom_start=14)
-        
-        for idx, row in missing_db.iterrows():
-            try:
+        # 데이터가 있다면 가장 최신 위치를 타겟팅
+        try:
+            lat = float(missing_db.iloc[-1]["위도"])
+            lng = float(missing_db.iloc[-1]["경도"])
+            m = folium.Map(location=[lat, lng], zoom_start=14)
+            
+            for idx, row in missing_db.iterrows():
                 folium.Marker(
                     [float(row["위도"]), float(row["경도"])],
-                    popup=f"<b>{row['이름']}</b>",
+                    popup=f"<b>{row['이름']}</b>({row['나이']}세)<br>{row['위치']}",
                     icon=folium.Icon(color="red", icon="info-sign")
                 ).add_to(m)
                 
@@ -102,7 +108,7 @@ with c2:
                     location=[float(row["위도"]), float(row["경도"])],
                     radius=500, color="red", fill=True, fill_opacity=0.15
                 ).add_to(m)
-            except:
-                continue
+        except:
+            m = folium.Map(location=[36.5, 127.5], zoom_start=7)
             
     st_folium(m, width="100%", height=500)
