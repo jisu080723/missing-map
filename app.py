@@ -25,25 +25,23 @@ csv_url = f"{base_url}/gviz/tq?tqx=out:csv"
 
 @st.cache_data(ttl=1)
 def load_data():
+    cols = ["등록시간", "이름", "나이", "위치", "위도", "경도", "특징"]
     try:
-        # 데이터 유실 방지를 위해 헤더 없이 순수 데이터만 가져옵니다.
         df = pd.read_csv(csv_url, header=None)
         if len(df) > 1:
-            # 첫 번째 줄이 만약 제목줄(텍스트)이면 제외하고 데이터만 슬라이싱
             if "위도" in str(df.iloc[0]) or "이름" in str(df.iloc[0]) or "lat" in str(df.iloc[0]).lower():
                 df = df.iloc[1:]
             
-            # 구글 시트 열 순서에 맞춰 강제로 칼럼 매칭 (0번째=등록시간, 1번째=이름...)
-            df.columns = ["등록시간", "이름", "나이", "위치", "위도", "경도", "특징"]
-            
-            # 위도와 경도를 강제 숫자로 변환하고 에러는 버림
-            df["위도"] = pd.to_numeric(df["위도"], errors='coerce')
-            df["경도"] = pd.to_numeric(df["경도"], errors='coerce')
-            df = df.dropna(subset=["위도", "경도"])
+            # 구글 시트의 칸 개수가 모자라거나 넘치면 강제로 7개로 맞춤
+            if df.shape[1] < 7:
+                for i in range(7 - df.shape[1]):
+                    df[df.shape[1]] = ""
+            df = df.iloc[:, :7]
+            df.columns = cols
             return df
-        return pd.DataFrame(columns=["등록시간", "이름", "나이", "위치", "위도", "경도", "특징"])
+        return pd.DataFrame(columns=cols)
     except:
-        return pd.DataFrame(columns=["등록시간", "이름", "나이", "위치", "위도", "경도", "특징"])
+        return pd.DataFrame(columns=cols)
 
 missing_db = load_data()
 
@@ -89,4 +87,46 @@ with c1:
     if missing_db.empty:
         st.info("현재 저장된 데이터가 없습니다.")
     else:
-        st.dataframe(missing_db)
+        st.dataframe(missing_db, use_container_width=True)
+
+with c2:
+    st.subheader("📍 실시간 수색 관제 지도 (반경 500m 원)")
+    
+    # 💡 [지도 완전 방어벽] 깨끗한 위도/경도 숫자 데이터만 필터링
+    try:
+        map_df = missing_db.copy()
+        map_df["위도"] = pd.to_numeric(map_df["위도"], errors='coerce')
+        map_df["경도"] = pd.to_numeric(map_df["경도"], errors='coerce')
+        map_df = map_df.dropna(subset=["위도", "경도"])
+    except:
+        map_df = pd.DataFrame()
+
+    # 데이터가 없거나 깨진 데이터뿐이면 대한민국 기본 지도 출력
+    if map_df.empty:
+        m = folium.Map(location=[36.5, 127.5], zoom_start=7)
+    else:
+        try:
+            # 가장 마지막에 등록된 '정상 좌표' 위치를 중심으로 설정
+            lat = float(map_df.iloc[-1]["위도"])
+            lng = float(map_df.iloc[-1]["경도"])
+            m = folium.Map(location=[lat, lng], zoom_start=14)
+            
+            # 오류 없는 정상 좌표만 지도에 마커와 원 그리기
+            for idx, row in map_df.iterrows():
+                try:
+                    folium.Marker(
+                        [float(row["위도"]), float(row["경도"])],
+                        popup=f"<b>{row['이름']}</b>({row['나이']}세)<br>{row['위치']}",
+                        icon=folium.Icon(color="red", icon="info-sign")
+                    ).add_to(m)
+                    
+                    folium.Circle(
+                        location=[float(row["위度"] if "위度" in row else row["위도"]), float(row["경도"])],
+                        radius=500, color="red", fill=True, fill_opacity=0.15
+                    ).add_to(m)
+                except:
+                    continue
+        except:
+            m = folium.Map(location=[36.5, 127.5], zoom_start=7)
+            
+    st_folium(m, width="100%", height=500)
