@@ -15,7 +15,7 @@ try:
     su = st.secrets["connections"]["gsheets"]["spreadsheet"]
     au = st.secrets["connections"]["gsheets"]["api_url"]
 except:
-    st.error("❌ Secrets 설정을 확인해 주세요.")
+    st.error("❌ 스트림릿 대시보드의 Secrets 설정을 다시 확인해 주세요.")
     st.stop()
 
 cu = f'{su.split("/edit")[0]}/gviz/tq?tqx=out:csv' if "/edit" in su else f'{su}/gviz/tq?tqx=out:csv'
@@ -42,37 +42,23 @@ with st.sidebar.form(key="reg_form", clear_on_submit=True):
     st.header("📝 신규 등록")
     name = st.text_input("1. 성함")
     age = st.text_input("2. 나이")
-    loc_n = st.text_input("3. 위치", placeholder="예: 서울역")
+    loc_n = st.text_input("3. 위치 (예: 서울역)", placeholder="정확한 명칭 입력")
     desc = st.text_area("4. 특징")
     submit = st.form_submit_button(label="🚨 즉시 등록")
 
 if submit and name and loc_n:
-    with st.spinner("저장 중..."):
+    with st.spinner("구글 시트에 영구 저장 중..."):
         try:
             time.sleep(1)
             l = geolocator.geocode(loc_n)
             if l:
                 row = {"등록시간": datetime.now().strftime("%Y-%m-%d %H:%M"), "이름": name, "나이": age, "위치": loc_n, "위도": float(l.latitude), "경도": float(l.longitude), "특징": desc}
-                if requests.post(au, data=json.dumps(row), headers={"Content-Type": "application/json"}).status_code == 200:
-                    st.success("🎯 등록 성공!"); st.cache_data.clear(); st.rerun()
-                else: st.error("❌ 구글 저장 실패")
-            else: st.error("❌ 위치 주소 오류")
-        except: st.error("❌ 주소 서버 지연. 잠시 후 다시 시도")
-
-c1, c2 = st.columns([1, 1])
-with c1:
-    st.subheader("📋 실종자 누적 리스트")
-    st.dataframe(db, use_container_width=True) if not db.empty else st.info("데이터 없음")
-
-with c2:
-    st.subheader("📍 실시간 수색 관제 지도 (반경 500m 원)")
-    m = folium.Map(location=[36.5, 127.5], zoom_start=7)
-    if not db.empty and "Y" in db.columns:
-        m = folium.Map(location=[float(db.iloc[-1]["Y"]), float(db.iloc[-1]["X"])], zoom_start=14)
-        for _, r in db.iterrows():
-            try:
-                folium.Marker([float(r["Y"]), float(r["X"])], popup=f"<b>{r.get('이름','실종자')}</b>", icon=folium.Icon(color="red")).add_to(m)
-                folium.Circle(location=[float(r["Y"]), float(r["X"])], radius=500, color="red", fill=True, fill_opacity=0.15).add_to(m)
-            except: continue
-    try: cp.html(m._repr_html_(), height=500, scrolling=False)
-    except: st.error("지도 출력 에러")
+                res = requests.post(au, data=json.dumps(row), headers={"Content-Type": "application/json"})
+                if res.status_code == 200:
+                    st.success("🎯 성공적으로 저장되었습니다!")
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.error("❌ 구글 앱스 스크립트(웹앱 주소) 연결에 실패했습니다.")
+            else:
+                st.error("❌ 입력한 위치를 지도에서 찾을 수 없습니다
