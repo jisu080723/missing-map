@@ -10,7 +10,7 @@ import streamlit.components.v1 as components
 
 # 페이지 기본 설정
 st.set_page_config(page_title="실종자 관제 시스템", layout="wide")
-st.title(" Police 실종자 보호자 직접 등록 및 실시간 관제 플랫폼")
+st.title(" 🚓 실종자 보호자 직접 등록 및 실시간 관제 플랫폼")
 st.caption("보호자가 입력한 정보는 구글 시트에 안전하게 영구 저장됩니다.")
 
 geolocator = Nominatim(user_agent="missing_jisu_final_2026", timeout=10)
