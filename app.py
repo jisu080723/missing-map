@@ -44,13 +44,16 @@ def load_google_sheet_data():
     except Exception:
         return pd.DataFrame()
 
-missing_database = load_google_sheet_data()
+# 전체 원본 데이터 로드
+raw_database = load_google_sheet_data()
 
-# [수정 반영 1] 구글 시트에 '상태' 열이 있다면, '수색중'인 데이터만 필터링하여 지도와 리스트에 표시합니다.
-# 발견 완료 처리된 실종자는 화면에서 자동으로 제외됩니다.
-if not missing_database.empty and "상태" in missing_database.columns:
-    missing_database = missing_database[missing_database["상태"] == "수색중"]
+# 지도와 리스트에 표시할 데이터 (수색중인 데이터만 필터링)
+if not raw_database.empty and "상태" in raw_database.columns:
+    missing_database = raw_database[raw_database["상태"] == "수색중"]
+else:
+    missing_database = raw_database
 
+# ----------------- 좌측 사이드바: 1. 신규 등록 폼 -----------------
 st.sidebar.header("📝 실종자 신규 등록")
 with st.sidebar.form(key="registration_form", clear_on_submit=True):
     name = st.text_input("1. 실종자 성함")
@@ -68,8 +71,8 @@ if submit_button:
                 
                 if geocoded_location:
                     reg_time = datetime.now().strftime("%Y-%m-%d %H:%M")
-                    # 신규 등록 시 '상태'의 기본값은 '수색중', '수색현황'의 기본값은 '정보 업데이트 중'으로 설정하여 전송합니다.
                     data_payload = {
+                        "action": "insert",  # 신규 등록 액션 명령어
                         "등록시간": reg_time, "이름": name, "나이": age, "위치": location_name,
                         "위도": float(geocoded_location.latitude), "경도": float(geocoded_location.longitude), 
                         "특징": description, "상태": "수색중", "수색현황": "정보 업데이트 중"
@@ -90,6 +93,51 @@ if submit_button:
     else:
         st.error("❌ 성함과 위치는 필수 입력 항목입니다.")
 
+st.sidebar.markdown("---")
+
+# ----------------- [새로 추가된 기능] 좌측 사이드바: 2. 관리자 제어 패널 -----------------
+st.sidebar.header("⚙️ 관리자 전용 관제 패널")
+if not missing_database.empty:
+    # 현재 수색 중인 실종자 이름 목록 생성
+    active_list = missing_database["이름"].tolist()
+    selected_name = st.sidebar.selectbox("상태를 변경할 실종자 선택", active_list)
+    
+    # 선택된 실종자의 기존 수색 현황 가져오기
+    selected_row = missing_database[missing_database["이름"] == selected_name].iloc[0]
+    existing_status = selected_row["수색현황"] if "수색현황" in selected_row else ""
+    
+    new_status_text = st.sidebar.text_input("📍 실시간 수색 현황 업데이트", value=existing_status)
+    
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        update_status_btn = st.button("📝 현황 업데이트")
+    with col2:
+        complete_btn = st.button("✅ 수색 완료 처리")
+        
+    # 현황 텍스트만 업데이트 할 때
+    if update_status_btn:
+        with st.spinner("구글 시트에 실시간 현황 동기화 중..."):
+            update_payload = {"action": "update", "이름": selected_name, "수색현황": new_status_text, "상태": "수색중"}
+            res = requests.post(api_url, data=json.dumps(update_payload), headers={"Content-Type": "application/json"})
+            if res.status_code == 200:
+                st.toast(f"📢 {selected_name} 님의 수색 현황이 업데이트되었습니다!")
+                st.cache_data.clear()
+                st.rerun()
+                
+    # 수색 완료 버튼을 눌렀을 때 (자동으로 리스트/지도에서 지우기)
+    if complete_btn:
+        with st.spinner("구글 시트에 완료 상태 체크 및 자동 반영 중..."):
+            complete_payload = {"action": "update", "이름": selected_name, "수색현황": "수색 완료 및 안전 귀가", "상태": "발견완료"}
+            res = requests.post(api_url, data=json.dumps(complete_payload), headers={"Content-Type": "application/json"})
+            if res.status_code == 200:
+                st.success(f"🎉 {selected_name} 님 무사 귀가! 복귀 처리 완료.")
+                st.cache_data.clear()
+                st.rerun()
+else:
+    st.sidebar.info("현재 수색 중인 실종자가 없어 관제 패널이 비활성화되었습니다.")
+
+
+# ----------------- 우측 메인 화면: 리스트 및 지도 표시 -----------------
 column_left, column_right = st.columns([1, 1])
 
 with column_left:
@@ -97,10 +145,9 @@ with column_left:
     if not missing_database.empty:
         st.dataframe(missing_database, use_container_width=True)
     else:
-        st.info("현재 저장된 실종자 데이터가 없습니다.")
+        st.info("현재 수색 중인 실종자 데이터가 없습니다.")
 
 with column_right:
-    # [수정 반영 2] 피드백에 따라 타이틀의 반경 표시를 500m에서 200m로 변경했습니다.
     st.subheader("📍 실시간 수색 관제 지도 (반경 200m 원)")
     if missing_database.empty or "Y_COORDINATE" not in missing_database.columns:
         map_object = folium.Map(location=[36.5, 127.5], zoom_start=7)
@@ -113,12 +160,9 @@ with column_right:
             try:
                 person_name = row["이름"] if "이름" in row else "실종자"
                 person_location = row["위치"] if "위치" in row else ""
-                
-                # [수정 반영 3] 구글 시트에서 실시간 '수색현황'과 '특징' 데이터를 가져옵니다.
                 current_status = row["수색현황"] if "수색현황" in row else "정보 업데이트 중"
                 person_desc = row["특징"] if "특징" in row else "미기재"
                 
-                # 마커 클릭 시 나타날 팝업창 디자인 구성 (실시간 수색현황 및 인상착의 포함)
                 popup_text = f"""
                 <div style='font-size: 11pt; font-family: sans-serif; line-height: 1.5;'>
                     <b>성함:</b> {person_name}<br>
@@ -136,7 +180,6 @@ with column_right:
                     icon=folium.Icon(color="red", icon="info-sign")
                 ).add_to(map_object)
                 
-                # [수정 반영 4] 수색 집중도를 높이기 위해 원 반경(radius)을 기존 500에서 200(미터)으로 축소 조정했습니다.
                 folium.Circle(
                     location=[float(row["Y_COORDINATE"]), float(row["X_COORDINATE"])],
                     radius=200, color="red", fill=True, fill_opacity=0.15
