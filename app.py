@@ -96,14 +96,111 @@ if submit_button:
 st.sidebar.markdown("---")
 
 # ----------------- [새로 추가된 기능] 좌측 사이드바: 2. 관리자 제어 패널 -----------------
-# ----------------- 좌측 사이드바: 2. 관리자 제어 패널 (보안 비밀번호 추가) -----------------
+import streamlit as st
+import folium
+import pandas as pd
+from datetime import datetime
+from geopy.geocoders import Nominatim
+import requests
+import json
+import time
+import streamlit.components.v1 as components
+
+# 페이지 기본 설정
+st.set_page_config(page_title="실종자 관제 시스템", layout="wide")
+st.title(" 🚓 실종자 보호자 직접 등록 및 실시간 관제 플랫폼")
+st.caption("보호자가 입력한 정보는 구글 시트에 안전하게 영구 저장됩니다.")
+
+geolocator = Nominatim(user_agent="missing_jisu_final_2026", timeout=10)
+
+# Secrets 값 직접 읽기
+try:
+    spreadsheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
+    api_url = st.secrets["connections"]["gsheets"]["api_url"]
+except Exception:
+    st.error("❌ 스트림릿 대시보드의 Secrets 설정을 다시 확인해 주세요.")
+    st.stop()
+
+# 주소 정제
+base_url = spreadsheet_url.split("/edit")[0] if "/edit" in spreadsheet_url else spreadsheet_url
+csv_url = f"{base_url}/gviz/tq?tqx=out:csv"
+
+@st.cache_data(ttl=1)
+def load_google_sheet_data():
+    try:
+        df = pd.read_csv(csv_url)
+        if not df.empty:
+            df.columns = [str(col).strip() for col in df.columns]
+            lat_column = [c for c in df.columns if "위도" in c or "lat" in c.lower()]
+            lng_column = [c for c in df.columns if "경도" in c or "lng" in c.lower()]
+            
+            if lat_column and lng_column:
+                df["Y_COORDINATE"] = pd.to_numeric(df[lat_column[0]], errors='coerce')
+                df["X_COORDINATE"] = pd.to_numeric(df[lng_column[0]], errors='coerce')
+                return df.dropna(subset=["Y_COORDINATE", "X_COORDINATE"])
+        return pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
+
+# 전체 원본 데이터 로드
+raw_database = load_google_sheet_data()
+
+# 지도와 리스트에 표시할 데이터 (수색중인 데이터만 필터링)
+if not raw_database.empty and "상태" in raw_database.columns:
+    missing_database = raw_database[raw_database["상태"] == "수색중"]
+else:
+    missing_database = raw_database
+
+# ----------------- 좌측 사이드바: 1. 신규 등록 폼 -----------------
+st.sidebar.header("📝 실종자 신규 등록")
+with st.sidebar.form(key="registration_form", clear_on_submit=True):
+    name = st.text_input("1. 실종자 성함")
+    age = st.text_input("2. 나이")
+    location_name = st.text_input("3. 마지막 발견 위치", placeholder="예: 서울역")
+    description = st.text_area("4. 주요 특징 및 인상착의")
+    submit_button = st.form_submit_button(label="🚨 시스템에 즉시 등록")
+
+if submit_button:
+    if name and location_name:
+        with st.spinner("🌍 위치 좌표를 찾고 구글 시트에 저장하는 중..."):
+            try:
+                time.sleep(1)
+                geocoded_location = geolocator.geocode(location_name)
+                
+                if geocoded_location:
+                    reg_time = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    data_payload = {
+                        "action": "insert", 
+                        "등록시간": reg_time, "이름": name, "나이": age, "위치": location_name,
+                        "위도": float(geocoded_location.latitude), "경도": float(geocoded_location.longitude), 
+                        "특징": description, "상태": "수색중", "수색현황": "정보 업데이트 중"
+                    }
+                    headers = {"Content-Type": "application/json"}
+                    response = requests.post(api_url, data=json.dumps(data_payload), headers=headers)
+                    
+                    if response.status_code == 200:
+                        st.success(f"🎯 {name} 님 등록 및 구글 저장 완료!")
+                        st.cache_data.clear()
+                        st.rerun()
+                    else:
+                        st.error("❌ 구글 웹앱 전송 실패 (배포 권한 설정을 확인해 주세요)")
+                else:
+                    st.error("❌ 입력하신 위치를 지도에서 찾을 수 없습니다.")
+            except Exception:
+                st.error("❌ 서버 지연이 발생했습니다. 잠시 후 다시 눌러주세요.")
+    else:
+        st.error("❌ 성함과 위치는 필수 입력 항목입니다.")
+
+st.sidebar.markdown("---")
+
+# ----------------- 좌측 사이드바: 2. 관리자 제어 패널 (비밀번호: 0723) -----------------
 st.sidebar.header("⚙️ 관리자 전용 관제 패널")
 
-# 비밀번호 입력창 추가 (주민들이 볼 수 없게 마스킹 처리)
+# 비밀번호 입력창 (글자가 보이지 않도록 마스킹 처리)
 admin_password = st.sidebar.text_input("🔒 관리자 인증 비밀번호", type="password")
 
-# 지수님이 정한 비밀번호가 일치할 때만 아래 관리자 기능이 작동하도록 제한
-if admin_password == "1234":  # <-- "1234" 대신 원하는 비밀번호를 적으세요!
+# 지수님이 지정하신 비밀번호 '0723' 조건문 매칭
+if admin_password == "0723":
     st.sidebar.success("✅ 인증 성공! 관제 권한이 활성화되었습니다.")
     
     if not missing_database.empty:
@@ -142,11 +239,15 @@ if admin_password == "1234":  # <-- "1234" 대신 원하는 비밀번호를 적�
         st.sidebar.info("현재 수색 중인 실종자가 없습니다.")
         
 elif admin_password != "":
-    # 비밀번호를 틀리게 입력했을 때 경고
     st.sidebar.error("❌ 비밀번호가 일치하지 않습니다.")
 else:
-    # 아무것도 입력하지 않았을 때 안내문
     st.sidebar.info("일반 주민은 접근할 수 없습니다. 관리자 인증이 필요합니다.")
+
+
+# ----------------- 우측 메인 화면: 리스트 및 지도 표시 -----------------
+column_left, column_right = st.columns([1, 1])
+
+with column_left:
 
 
 # ----------------- 우측 메인 화면: 리스트 및 지도 표시 -----------------
