@@ -114,6 +114,7 @@ if admin_password == "0723":
         
         new_status_text = st.sidebar.text_input("📍 실시간 수색 현황 업데이트", value=existing_status)
         
+        # 버튼 2개를 나란히 놓기 위한 레이아웃 정의 및 변수 선언 오류 교정
         col1, col2 = st.sidebar.columns(2)
         with col1:
             update_status_btn = st.button("📝 현황 업데이트")
@@ -147,4 +148,18 @@ else:
 
 
 # ----------------- 우측 메인 화면: 리스트 및 지도 표시 -----------------
-column
+column_left, column_right = st.columns([1, 1])
+
+with column_left:
+    st.subheader("📋 현재 등록된 실종자 누적 리스트")
+    if not missing_database.empty:
+        st.dataframe(missing_database, use_container_width=True)
+    else:
+        st.info("현재 수색 중인 실종자 데이터가 없습니다.")
+
+with column_right:
+    st.subheader("📍 실시간 수색 관제 지도 (반경 200m 원)")
+    if missing_database.empty or "Y_COORDINATE" not in missing_database.columns:
+        map_object = folium.Map(location=[36.5, 127.5], zoom_start=7)
+    else:
+        latest_latitude = float(missing_
