@@ -114,7 +114,6 @@ if admin_password == "0723":
         
         new_status_text = st.sidebar.text_input("📍 실시간 수색 현황 업데이트", value=existing_status)
         
-        # 버튼 2개를 나란히 놓기 위한 레이아웃 정의 및 변수 선언 오류 교정
         col1, col2 = st.sidebar.columns(2)
         with col1:
             update_status_btn = st.button("📝 현황 업데이트")
@@ -162,4 +161,45 @@ with column_right:
     if missing_database.empty or "Y_COORDINATE" not in missing_database.columns:
         map_object = folium.Map(location=[36.5, 127.5], zoom_start=7)
     else:
-        latest_latitude = float(missing_
+        # 이 부분의 잘린 괄호와 변수 오타를 안전하게 완전체 문법으로 수정했습니다.
+        last_row = missing_database.iloc[-1]
+        latest_latitude = float(last_row["Y_COORDINATE"])
+        latest_longitude = float(last_row["X_COORDINATE"])
+        map_object = folium.Map(location=[latest_latitude, latest_longitude], zoom_start=15)
+        
+        for index, row in missing_database.iterrows():
+            try:
+                person_name = row["이름"] if "이름" in row else "실종자"
+                person_location = row["위치"] if "위치" in row else ""
+                current_status = row["수색현황"] if "수색현황" in row else "정보 업데이트 중"
+                person_desc = row["특징"] if "특징" in row else "미기재"
+                
+                popup_text = f"""
+                <div style='font-size: 11pt; font-family: sans-serif; line-height: 1.5;'>
+                    <b>성함:</b> {person_name}<br>
+                    <b>위치:</b> {person_location}<br>
+                    <b>특징:</b> {person_desc}<br>
+                    <hr style='margin: 8px 0; border: 0; border-top: 1px solid #ccc;'>
+                    <span style='color: red; font-weight: bold;'>🚨 수색 진행 현황:</span><br>
+                    {current_status}
+                </div>
+                """
+                
+                folium.Marker(
+                    [float(row["Y_COORDINATE"]), float(row["X_COORDINATE"])],
+                    popup=folium.Popup(popup_text, max_width=300),
+                    icon=folium.Icon(color="red", icon="info-sign")
+                ).add_to(map_object)
+                
+                folium.Circle(
+                    location=[float(row["Y_COORDINATE"]), float(row["X_COORDINATE"])],
+                    radius=200, color="red", fill=True, fill_opacity=0.15
+                ).add_to(map_object)
+            except Exception:
+                continue
+
+    try:
+        html_map_data = map_object._repr_html_()
+        components.html(html_map_data, height=500, scrolling=False)
+    except Exception:
+        st.error("❌ 지도를 화면에 표시하지 못했습니다.")
