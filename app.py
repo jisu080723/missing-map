@@ -96,45 +96,57 @@ if submit_button:
 st.sidebar.markdown("---")
 
 # ----------------- [새로 추가된 기능] 좌측 사이드바: 2. 관리자 제어 패널 -----------------
+# ----------------- 좌측 사이드바: 2. 관리자 제어 패널 (보안 비밀번호 추가) -----------------
 st.sidebar.header("⚙️ 관리자 전용 관제 패널")
-if not missing_database.empty:
-    # 현재 수색 중인 실종자 이름 목록 생성
-    active_list = missing_database["이름"].tolist()
-    selected_name = st.sidebar.selectbox("상태를 변경할 실종자 선택", active_list)
+
+# 비밀번호 입력창 추가 (주민들이 볼 수 없게 마스킹 처리)
+admin_password = st.sidebar.text_input("🔒 관리자 인증 비밀번호", type="password")
+
+# 지수님이 정한 비밀번호가 일치할 때만 아래 관리자 기능이 작동하도록 제한
+if admin_password == "1234":  # <-- "1234" 대신 원하는 비밀번호를 적으세요!
+    st.sidebar.success("✅ 인증 성공! 관제 권한이 활성화되었습니다.")
     
-    # 선택된 실종자의 기존 수색 현황 가져오기
-    selected_row = missing_database[missing_database["이름"] == selected_name].iloc[0]
-    existing_status = selected_row["수색현황"] if "수색현황" in selected_row else ""
-    
-    new_status_text = st.sidebar.text_input("📍 실시간 수색 현황 업데이트", value=existing_status)
-    
-    col1, col2 = st.sidebar.columns(2)
-    with col1:
-        update_status_btn = st.button("📝 현황 업데이트")
-    with col2:
-        complete_btn = st.button("✅ 수색 완료 처리")
+    if not missing_database.empty:
+        active_list = missing_database["이름"].tolist()
+        selected_name = st.sidebar.selectbox("상태를 변경할 실종자 선택", active_list)
         
-    # 현황 텍스트만 업데이트 할 때
-    if update_status_btn:
-        with st.spinner("구글 시트에 실시간 현황 동기화 중..."):
-            update_payload = {"action": "update", "이름": selected_name, "수색현황": new_status_text, "상태": "수색중"}
-            res = requests.post(api_url, data=json.dumps(update_payload), headers={"Content-Type": "application/json"})
-            if res.status_code == 200:
-                st.toast(f"📢 {selected_name} 님의 수색 현황이 업데이트되었습니다!")
-                st.cache_data.clear()
-                st.rerun()
-                
-    # 수색 완료 버튼을 눌렀을 때 (자동으로 리스트/지도에서 지우기)
-    if complete_btn:
-        with st.spinner("구글 시트에 완료 상태 체크 및 자동 반영 중..."):
-            complete_payload = {"action": "update", "이름": selected_name, "수색현황": "수색 완료 및 안전 귀가", "상태": "발견완료"}
-            res = requests.post(api_url, data=json.dumps(complete_payload), headers={"Content-Type": "application/json"})
-            if res.status_code == 200:
-                st.success(f"🎉 {selected_name} 님 무사 귀가! 복귀 처리 완료.")
-                st.cache_data.clear()
-                st.rerun()
+        selected_row = missing_database[missing_database["이름"] == selected_name].iloc[0]
+        existing_status = selected_row["수색현황"] if "수색현황" in selected_row else ""
+        
+        new_status_text = st.sidebar.text_input("📍 실시간 수색 현황 업데이트", value=existing_status)
+        
+        col1, col2 = st.sidebar.columns(2)
+        with col1:
+            update_status_btn = st.button("📝 현황 업데이트")
+        with col2:
+            complete_btn = st.button("✅ 수색 완료 처리")
+            
+        if update_status_btn:
+            with st.spinner("구글 시트에 실시간 현황 동기화 중..."):
+                update_payload = {"action": "update", "이름": selected_name, "수색현황": new_status_text, "상태": "수색중"}
+                res = requests.post(api_url, data=json.dumps(update_payload), headers={"Content-Type": "application/json"})
+                if res.status_code == 200:
+                    st.toast(f"📢 {selected_name} 님의 수색 현황이 업데이트되었습니다!")
+                    st.cache_data.clear()
+                    st.rerun()
+                    
+        if complete_btn:
+            with st.spinner("구글 시트에 완료 상태 체크 및 자동 반영 중..."):
+                complete_payload = {"action": "update", "이름": selected_name, "수색현황": "수색 완료 및 안전 귀가", "상태": "발견완료"}
+                res = requests.post(api_url, data=json.dumps(complete_payload), headers={"Content-Type": "application/json"})
+                if res.status_code == 200:
+                    st.success(f"🎉 {selected_name} 님 무사 귀가! 복귀 처리 완료.")
+                    st.cache_data.clear()
+                    st.rerun()
+    else:
+        st.sidebar.info("현재 수색 중인 실종자가 없습니다.")
+        
+elif admin_password != "":
+    # 비밀번호를 틀리게 입력했을 때 경고
+    st.sidebar.error("❌ 비밀번호가 일치하지 않습니다.")
 else:
-    st.sidebar.info("현재 수색 중인 실종자가 없어 관제 패널이 비활성화되었습니다.")
+    # 아무것도 입력하지 않았을 때 안내문
+    st.sidebar.info("일반 주민은 접근할 수 없습니다. 관리자 인증이 필요합니다.")
 
 
 # ----------------- 우측 메인 화면: 리스트 및 지도 표시 -----------------
