@@ -116,9 +116,9 @@ if admin_password == "0723":
         
         col1, col2 = st.sidebar.columns(2)
         with col1:
-            update_status_btn = st.sidebar.button("📝 현황 업데이트")
+            update_status_btn = st.button("📝 현황 업데이트")
         with col2:
-            complete_btn = st.sidebar.button("✅ 수색 완료 처리")
+            complete_btn = st.button("✅ 수색 완료 처리")
             
         if update_status_btn:
             with st.spinner("구글 시트에 실시간 현황 동기화 중..."):
@@ -131,3 +131,20 @@ if admin_password == "0723":
                     
         if complete_btn:
             with st.spinner("구글 시트에 완료 상태 체크 및 자동 반영 중..."):
+                complete_payload = {"action": "update", "이름": selected_name, "수색현황": "수색 완료 및 안전 귀가", "상태": "발견완료"}
+                res = requests.post(api_url, data=json.dumps(complete_payload), headers={"Content-Type": "application/json"})
+                if res.status_code == 200:
+                    st.success(f"🎉 {selected_name} 님 무사 귀가! 복귀 처리 완료.")
+                    st.cache_data.clear()
+                    st.rerun()
+    else:
+        st.sidebar.info("현재 수색 중인 실종자가 없습니다.")
+        
+elif admin_password != "":
+    st.sidebar.error("❌ 비밀번호가 일치하지 않습니다.")
+else:
+    st.sidebar.info("일반 주민은 접근할 수 없습니다. 관리자 인증이 필요합니다.")
+
+
+# ----------------- 우측 메인 화면: 리스트 및 지도 표시 -----------------
+column
